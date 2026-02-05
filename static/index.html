@@ -7,81 +7,102 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body { background: #0f172a; color: #f1f5f9; font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
         .spinner { border: 3px solid rgba(255, 255, 255, 0.1); border-top: 3px solid #ec4899; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="min-h-screen py-12 px-4">
     <div class="max-w-4xl mx-auto">
-        <header class="text-center mb-16">
-            <h1 class="text-6xl font-black italic bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500 mb-4">VIBESTREAM PRO</h1>
+        <header class="text-center mb-12">
+            <h1 class="text-5xl font-black italic bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500 mb-4">VIBESTREAM PRO</h1>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-            <div class="bg-slate-900/50 p-8 rounded-3xl border border-slate-800">
-                <h3 class="text-pink-500 font-bold mb-4 uppercase text-xs">YouTube URL</h3>
-                <input id="url" type="text" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-2xl p-4 mb-4 outline-none focus:border-pink-500">
-                <button onclick="handleAction('url')" class="w-full bg-pink-600 hover:bg-pink-700 font-bold py-4 rounded-2xl transition-all">АНАЛИЗ</button>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="glass p-6 rounded-3xl">
+                <input id="url" type="text" placeholder="YouTube URL..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 mb-4 outline-none focus:border-pink-500">
+                <button onclick="run('url')" class="w-full bg-pink-600 hover:bg-pink-700 font-bold py-4 rounded-xl transition-all">АНАЛИЗИРОВАТЬ</button>
             </div>
-            <div class="bg-slate-900/50 p-8 rounded-3xl border border-slate-800">
-                <h3 class="text-emerald-500 font-bold mb-4 uppercase text-xs">Файл Аудио</h3>
-                <input id="file" type="file" class="w-full text-sm text-slate-400 mb-4">
-                <button onclick="handleAction('file')" class="w-full bg-emerald-600 hover:bg-emerald-700 font-bold py-4 rounded-2xl transition-all">ОБРАБОТАТЬ</button>
+            <div class="glass p-6 rounded-3xl">
+                <input id="file" type="file" class="w-full mb-4 text-sm text-slate-400">
+                <button onclick="run('file')" class="w-full bg-emerald-600 hover:bg-emerald-700 font-bold py-4 rounded-xl transition-all">ЗАГРУЗИТЬ ФАЙЛ</button>
             </div>
         </div>
 
-        <div id="status-box" class="hidden mb-12 p-8 bg-slate-900 border-l-8 border-pink-500 rounded-r-3xl flex items-center gap-6">
+        <div id="status-box" class="hidden mb-8 p-6 glass border-l-4 border-pink-500 rounded-xl flex items-center gap-4">
             <div class="spinner"></div>
-            <div id="status-text" class="text-xl font-bold italic text-pink-100">Запуск...</div>
+            <div id="status-text" class="font-bold text-pink-100">Инициализация...</div>
         </div>
 
-        <div id="result" class="hidden bg-slate-900/50 p-10 rounded-3xl prose prose-invert max-w-none border border-slate-800 shadow-2xl"></div>
+        <div id="result" class="hidden glass p-8 rounded-3xl prose prose-invert max-w-none border border-slate-800"></div>
     </div>
 
     <script>
-        let poll;
-        async function handleAction(type) {
-            document.getElementById('result').classList.add('hidden');
-            const box = document.getElementById('status-box');
-            const txt = document.getElementById('status-text');
-            box.classList.remove('hidden');
+        let timer;
+
+        async function run(type) {
+            const statusBox = document.getElementById('status-box');
+            const statusText = document.getElementById('status-text');
+            const resultBox = document.getElementById('result');
+            
+            resultBox.classList.add('hidden');
+            statusBox.classList.remove('hidden');
+            statusText.innerText = "🚀 Отправка данных на сервер...";
 
             try {
                 let r;
                 if(type === 'url') {
                     const url = document.getElementById('url').value;
-                    if(!url) return;
-                    txt.innerText = "🔍 Соединение с сервером...";
+                    if(!url) return alert("Вставь ссылку!");
                     r = await fetch(`/process-live?url=${encodeURIComponent(url)}`);
                 } else {
                     const file = document.getElementById('file').files[0];
-                    if(!file) return;
-                    txt.innerText = "📤 Загрузка файла...";
+                    if(!file) return alert("Выбери файл!");
                     const fd = new FormData(); fd.append('file', file);
                     r = await fetch('/upload-audio', { method: 'POST', body: fd });
                 }
-                const d = await r.json();
-                if(d.task_id) startPolling(d.task_id);
-            } catch(e) {
-                txt.innerText = "❌ Ошибка соединения. Попробуйте обновить страницу.";
+
+                const data = await r.json();
+                console.log("Ответ сервера:", data); // Для отладки в консоли F12
+
+                if(data && data.task_id) {
+                    pollStatus(data.task_id);
+                } else {
+                    statusText.innerText = "❌ Ошибка: " + (data.message || "Сервер не вернул ID задачи");
+                }
+            } catch (e) {
+                statusText.innerText = "❌ Ошибка сети: " + e.message;
             }
         }
 
-        function startPolling(id) {
-            if(poll) clearInterval(poll);
-            poll = setInterval(async () => {
+        function pollStatus(id) {
+            const statusText = document.getElementById('status-text');
+            const resultBox = document.getElementById('result');
+            const statusBox = document.getElementById('status-box');
+
+            if(timer) clearInterval(timer);
+
+            timer = setInterval(async () => {
                 try {
                     const r = await fetch(`/check-status?task_id=${id}`);
-                    const d = await r.json();
-                    if (typeof d.data === 'object' && d.data.result) {
-                        clearInterval(poll);
-                        document.getElementById('result').innerHTML = marked.parse(d.data.result);
-                        document.getElementById('result').classList.remove('hidden');
-                        document.getElementById('status-box').classList.add('hidden');
-                    } else {
-                        document.getElementById('status-text').innerText = d.data;
+                    const json = await r.json();
+                    
+                    // ГЛАВНЫЙ ФИКС ОШИБКИ UNDEFINED
+                    const responseData = json.data;
+
+                    if (responseData && typeof responseData === 'object' && responseData.result) {
+                        // Если пришел объект с ключом result — мы закончили!
+                        clearInterval(timer);
+                        resultBox.innerHTML = marked.parse(responseData.result);
+                        resultBox.classList.remove('hidden');
+                        statusBox.classList.add('hidden');
+                    } else if (responseData) {
+                        // Если пришла просто строка — показываем её как статус
+                        statusText.innerText = responseData;
                     }
-                } catch(e) { console.log("Опрос..."); }
+                } catch (e) {
+                    console.error("Ошибка опроса:", e);
+                }
             }, 3000);
         }
     </script>
