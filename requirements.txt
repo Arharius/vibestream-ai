@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+yt-dlp
+groq
+google-genai
+requests
+fpdf
+python-dotenv
+sqlalchemy
+psycopg2-binary
+httpx

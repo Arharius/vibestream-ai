@@ -1,87 +1,73 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+import os, time, shutil, uuid
+from fastapi import FastAPI, Query, UploadFile, File, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-import uvicorn
-import os
-import shutil
-from services.video_service import download_audio
-from services.audio_service import transcribe_audio
-from services.gpt_service import analyze_content
+from fastapi.middleware.cors import CORSMiddleware
+import database
+from services.audio_service import process_video_or_audio
+from services.gpt_service import analyze_text
 
-app = FastAPI()
+app = FastAPI(title="VibeStream PRO")
 
-# Подключаем папку со стилями и скриптами
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Разрешаем CORS для стабильной работы из браузера
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    with open("static/index.html", "r", encoding="utf-8") as f:
-        return f.read()
+# Глобальное хранилище статусов
+tasks_status = {}
 
-# --- ЭНДПОИНТ 1: Работа по ССЫЛКЕ (YouTube, RuTube и т.д.) ---
+# Асинхронная инициализация базы, чтобы не тормозить запуск сервера
+@app.on_event("startup")
+async def startup_event():
+    try:
+        database.init_db()
+        print("✅ База данных Neon готова к работе")
+    except Exception as e:
+        print(f"⚠️ Ошибка БД при старте: {e}")
+
+os.makedirs("downloads", exist_ok=True)
+app.mount("/downloads", StaticFiles(directory="downloads"), name="downloads")
+
+# Фоновый воркер
+async def background_worker(task_id, url_or_path, user_id, is_url=True):
+    try:
+        tasks_status[task_id] = "📥 Загрузка медиа..."
+        if is_url:
+            data = process_video_or_audio(url_or_path)
+            audio_path, video_id = data["audio"], data["id"]
+        else:
+            audio_path, video_id = url_or_path, task_id
+
+        tasks_status[task_id] = "🤖 ИИ-анализ (транскрибация)..."
+        analysis = analyze_text(audio_path)
+        
+        try:
+            database.save_project(user_id, video_id, "Анализ", analysis)
+        except: pass
+        
+        tasks_status[task_id] = {"result": analysis}
+    except Exception as e:
+        tasks_status[task_id] = f"❌ Ошибка: {str(e)}"
+
 @app.get("/process-live")
-async def process_live_endpoint(url: str):
-    print(f"\n🚀 Запрос на анализ ссылки: {url}")
-    
-    try:
-        # 1. Скачивание
-        download_result = download_audio(url)
-        if download_result["status"] == "error":
-            raise Exception(download_result["message"])
-        
-        audio_path = download_result["file_path"]
-        
-        # 2. Транскрибация
-        transcript = transcribe_audio(audio_path)
-        if not transcript:
-            raise Exception("Не удалось распознать речь.")
+async def process_live(background_tasks: BackgroundTasks, url: str = Query(...), user_id: str = "guest"):
+    task_id = str(uuid.uuid4())
+    tasks_status[task_id] = "Запуск..."
+    # Мгновенный ответ для предотвращения 504 ошибки
+    background_tasks.add_task(background_worker, task_id, url, user_id, True)
+    return {"status": "started", "task_id": task_id}
 
-        # 3. Анализ GPT
-        analysis = analyze_content(transcript)
-        
-        # 4. Уборка (удаляем файл)
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+@app.post("/upload-audio")
+async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = File(...), user_id: str = "guest"):
+    task_id = str(uuid.uuid4())
+    p_dir = os.path.join("downloads", task_id)
+    os.makedirs(p_dir, exist_ok=True)
+    file_path = os.path.join(p_dir, "original.m4a")
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    background_tasks.add_task(background_worker, task_id, file_path, user_id, False)
+    return {"status": "started", "task_id": task_id}
 
-        return {"status": "success", "content": analysis}
+@app.get("/check-status")
+async def check_status(task_id: str):
+    return {"data": tasks_status.get(task_id, "Ожидание...")}
 
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
-
-# --- ЭНДПОИНТ 2: Работа с ЗАГРУЖЕННЫМ ФАЙЛОМ ---
-@app.post("/process-upload")
-async def process_upload_endpoint(file: UploadFile = File(...)):
-    print(f"\n📂 Получен файл: {file.filename}")
-    
-    temp_filename = f"upload_{file.filename}"
-    
-    try:
-        # 1. Сохраняем файл на диск
-        with open(temp_filename, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # 2. Транскрибация (используем тот же сервис)
-        print("🎧 Начинаю транскрибацию загруженного файла...")
-        transcript = transcribe_audio(temp_filename)
-        if not transcript:
-            raise Exception("Не удалось распознать речь в файле.")
-
-        # 3. Анализ GPT
-        print("🧠 Отправляю текст в AI...")
-        analysis = analyze_content(transcript)
-        
-        # 4. Уборка
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
-
-        return {"status": "success", "content": analysis}
-
-    except Exception as e:
-        print(f"❌ Ошибка обработки файла: {e}")
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename) # Убираем мусор даже при ошибке
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+app.mount("/", StaticFiles(directory="static", html=True), name="static")

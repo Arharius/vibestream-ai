@@ -2,259 +2,88 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VibeStream AI</title>
+    <title>VibeStream PRO</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-        
-        .gradient-text {
-            background: linear-gradient(to right, #c084fc, #db2777);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .history-item { 
-            cursor: pointer; 
-            transition: all 0.2s; 
-            border-left: 3px solid transparent;
-        }
-        .history-item:hover { 
-            background-color: rgba(255,255,255,0.05); 
-            border-left-color: #db2777; 
-        }
-
-        .prose h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 1rem; color: #fff; }
-        .prose h2 { font-size: 1.4rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.8rem; color: #f8fafc; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
-        .prose p { margin-bottom: 1rem; line-height: 1.7; color: #cbd5e1; }
-        
-        .loader { display: none; border: 3px solid #1e293b; border-top: 3px solid #db2777; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        body { background: #0f172a; color: #f1f5f9; font-family: 'Inter', sans-serif; }
+        .spinner { border: 3px solid rgba(255, 255, 255, 0.1); border-top: 3px solid #ec4899; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden">
+<body class="min-h-screen py-12 px-4">
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-16">
+            <h1 class="text-6xl font-black italic bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500 mb-4">VIBESTREAM PRO</h1>
+        </header>
 
-    <aside class="w-72 bg-[#020617] border-r border-gray-800 flex flex-col z-20">
-        <div class="p-6">
-            <h1 class="text-2xl font-bold tracking-tight">Vibe<span class="gradient-text">Stream</span></h1>
-            <p class="text-xs text-gray-500 mt-1 uppercase tracking-widest">History Manager</p>
-        </div>
-
-        <div class="px-4 pb-2 flex justify-between items-center">
-            <span class="text-[10px] text-gray-500 font-bold uppercase">История</span>
-            <button onclick="clearHistory()" class="text-[10px] text-red-500 hover:text-red-400 uppercase font-bold">Очистить</button>
-        </div>
-
-        <div id="historyList" class="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            <div class="bg-slate-900/50 p-8 rounded-3xl border border-slate-800">
+                <h3 class="text-pink-500 font-bold mb-4 uppercase text-xs">YouTube URL</h3>
+                <input id="url" type="text" placeholder="https://..." class="w-full bg-slate-950 border border-slate-700 rounded-2xl p-4 mb-4 outline-none focus:border-pink-500">
+                <button onclick="handleAction('url')" class="w-full bg-pink-600 hover:bg-pink-700 font-bold py-4 rounded-2xl transition-all">АНАЛИЗ</button>
             </div>
-
-        <div class="p-4 border-t border-gray-800">
-            <div class="flex items-center gap-2 text-xs text-gray-500">
-                <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
-                SYSTEM READY
-            </div>
-        </div>
-    </aside>
-
-    <main class="flex-1 flex flex-col relative">
-        <div class="bg-[#0f172a]/80 backdrop-blur-md border-b border-gray-800 p-6 z-10 sticky top-0">
-            <div class="max-w-3xl mx-auto w-full">
-                <div class="flex bg-[#1e293b] rounded-lg p-1 mb-4 w-fit">
-                    <button id="tabLink" onclick="switchMode('link')" class="px-4 py-1.5 text-sm rounded-md transition-all bg-gray-700 text-white shadow-sm">🔗 Ссылка</button>
-                    <button id="tabFile" onclick="switchMode('file')" class="px-4 py-1.5 text-sm rounded-md transition-all text-gray-400">📁 Файл</button>
-                </div>
-
-                <div class="flex gap-3">
-                    <div id="linkMode" class="flex-1">
-                        <input type="text" id="youtubeUrl" class="w-full bg-[#1e293b] border border-gray-700 text-white text-sm rounded-xl focus:ring-2 focus:ring-[#db2777] block p-3 pl-4 transition-all" placeholder="Вставь ссылку на видео...">
-                    </div>
-                    <div id="fileMode" class="flex-1 hidden">
-                        <label class="flex items-center justify-center w-full h-[46px] rounded-xl cursor-pointer bg-[#1e293b] border border-gray-700 hover:border-[#db2777]">
-                            <span id="fileName" class="text-sm text-gray-400 truncate px-4">Выбрать файл...</span>
-                            <input type="file" id="fileInput" class="hidden" accept="audio/*,video/*">
-                        </label>
-                    </div>
-                    <button id="generateBtn" class="bg-gradient-to-r from-[#c084fc] to-[#db2777] text-white font-medium rounded-xl text-sm px-8 py-3 flex items-center gap-2 hover:opacity-90 transition-all disabled:opacity-50">
-                        <span id="btnText">Запустить</span>
-                        <div class="loader"></div>
-                    </button>
-                </div>
+            <div class="bg-slate-900/50 p-8 rounded-3xl border border-slate-800">
+                <h3 class="text-emerald-500 font-bold mb-4 uppercase text-xs">Файл Аудио</h3>
+                <input id="file" type="file" class="w-full text-sm text-slate-400 mb-4">
+                <button onclick="handleAction('file')" class="w-full bg-emerald-600 hover:bg-emerald-700 font-bold py-4 rounded-2xl transition-all">ОБРАБОТАТЬ</button>
             </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-6">
-            <div class="max-w-3xl mx-auto">
-                <div id="emptyState" class="flex flex-col items-center justify-center h-[50vh] text-gray-500">
-                    <div class="text-4xl mb-4 opacity-20">📡</div>
-                    <p class="opacity-50">Готов к обработке</p>
-                </div>
-                <div id="resultContent" class="hidden prose prose-invert max-w-none pb-24"></div>
-            </div>
+        <div id="status-box" class="hidden mb-12 p-8 bg-slate-900 border-l-8 border-pink-500 rounded-r-3xl flex items-center gap-6">
+            <div class="spinner"></div>
+            <div id="status-text" class="text-xl font-bold italic text-pink-100">Запуск...</div>
         </div>
-    </main>
+
+        <div id="result" class="hidden bg-slate-900/50 p-10 rounded-3xl prose prose-invert max-w-none border border-slate-800 shadow-2xl"></div>
+    </div>
 
     <script>
-        let currentMode = 'link';
+        let poll;
+        async function handleAction(type) {
+            document.getElementById('result').classList.add('hidden');
+            const box = document.getElementById('status-box');
+            const txt = document.getElementById('status-text');
+            box.classList.remove('hidden');
 
-        // --- 💾 ЛОГИКА ИСТОРИИ ---
-        function saveToHistory(content) {
             try {
-                const history = JSON.parse(localStorage.getItem('vibeHistory') || '[]');
-                
-                // Извлекаем заголовок (первая непустая строка)
-                const lines = content.split('\n').filter(l => l.trim() !== '');
-                let rawTitle = lines[0] || "Новый отчет";
-                // Чистим от Markdown символов
-                let cleanTitle = rawTitle.replace(/[#*]/g, '').trim();
-                
-                if (cleanTitle.length > 40) cleanTitle = cleanTitle.substring(0, 40) + "...";
-
-                const date = new Date().toLocaleString('ru-RU', { 
-                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
-                });
-
-                const historyItem = { 
-                    id: Date.now(), 
-                    title: cleanTitle, 
-                    date: date, 
-                    content: content 
-                };
-
-                history.unshift(historyItem);
-                localStorage.setItem('vibeHistory', JSON.stringify(history.slice(0, 20)));
-                
-                renderHistory();
-            } catch (e) {
-                console.error("Save error:", e);
-            }
-        }
-
-        function renderHistory() {
-            const list = document.getElementById('historyList');
-            const history = JSON.parse(localStorage.getItem('vibeHistory') || '[]');
-            
-            if (history.length === 0) {
-                list.innerHTML = '<div class="text-[11px] text-gray-600 text-center mt-10 italic">Записей нет</div>';
-                return;
-            }
-
-            list.innerHTML = history.map(item => `
-                <div onclick="loadFromHistory(${item.id})" class="history-item p-3 rounded-lg mb-1 group border-b border-gray-800/30">
-                    <div class="text-sm font-medium text-gray-300 truncate group-hover:text-white">
-                        ${item.title || 'Без названия'}
-                    </div>
-                    <div class="text-[10px] text-gray-600 mt-1">${item.date}</div>
-                </div>
-            `).join('');
-        }
-
-        function loadFromHistory(id) {
-            try {
-                const history = JSON.parse(localStorage.getItem('vibeHistory') || '[]');
-                // Используем нестрогое сравнение на случай разных типов данных
-                const item = history.find(i => i.id == id);
-                if (item) {
-                    document.getElementById('emptyState').classList.add('hidden');
-                    const contentDiv = document.getElementById('resultContent');
-                    contentDiv.classList.remove('hidden');
-                    contentDiv.innerHTML = marked.parse(item.content);
-                    // Скролл вверх
-                    document.querySelector('main .overflow-y-auto').scrollTop = 0;
-                }
-            } catch (e) {
-                console.error("Load error:", e);
-            }
-        }
-
-        function clearHistory() {
-            if(confirm('Удалить всю историю?')) {
-                localStorage.removeItem('vibeHistory');
-                renderHistory();
-                location.reload();
-            }
-        }
-
-        // --- ИНТЕРФЕЙС ---
-        function switchMode(mode) {
-            currentMode = mode;
-            const tabLink = document.getElementById('tabLink');
-            const tabFile = document.getElementById('tabFile');
-            
-            if(mode === 'link') {
-                tabLink.className = 'px-4 py-1.5 text-sm rounded-md transition-all bg-gray-700 text-white shadow-sm';
-                tabFile.className = 'px-4 py-1.5 text-sm rounded-md transition-all text-gray-400';
-                document.getElementById('linkMode').classList.remove('hidden');
-                document.getElementById('fileMode').classList.add('hidden');
-            } else {
-                tabFile.className = 'px-4 py-1.5 text-sm rounded-md transition-all bg-gray-700 text-white shadow-sm';
-                tabLink.className = 'px-4 py-1.5 text-sm rounded-md transition-all text-gray-400';
-                document.getElementById('linkMode').classList.add('hidden');
-                document.getElementById('fileMode').classList.remove('hidden');
-            }
-        }
-
-        document.getElementById('fileInput').addEventListener('change', function() {
-            if (this.files[0]) document.getElementById('fileName').innerText = this.files[0].name;
-        });
-
-        document.getElementById('generateBtn').addEventListener('click', async () => {
-            const btn = document.getElementById('generateBtn');
-            const loader = document.querySelector('.loader');
-            const content = document.getElementById('resultContent');
-            const empty = document.getElementById('emptyState');
-            
-            btn.disabled = true;
-            document.getElementById('btnText').textContent = 'Обработка...';
-            loader.style.display = 'block';
-            
-            try {
-                let response;
-                if (currentMode === 'link') {
-                    const url = document.getElementById('youtubeUrl').value;
-                    if(!url) throw new Error("Вставь ссылку!");
-                    response = await fetch(`/process-live?url=${encodeURIComponent(url)}`);
+                let r;
+                if(type === 'url') {
+                    const url = document.getElementById('url').value;
+                    if(!url) return;
+                    txt.innerText = "🔍 Соединение с сервером...";
+                    r = await fetch(`/process-live?url=${encodeURIComponent(url)}`);
                 } else {
-                    const files = document.getElementById('fileInput').files;
-                    if(!files.length) throw new Error("Выбери файл!");
-                    const fd = new FormData();
-                    fd.append("file", files[0]);
-                    response = await fetch(`/process-upload`, { method: "POST", body: fd });
+                    const file = document.getElementById('file').files[0];
+                    if(!file) return;
+                    txt.innerText = "📤 Загрузка файла...";
+                    const fd = new FormData(); fd.append('file', file);
+                    r = await fetch('/upload-audio', { method: 'POST', body: fd });
                 }
-
-                const data = await response.json();
-                if(data.status === 'success') {
-                    empty.classList.add('hidden');
-                    content.classList.remove('hidden');
-                    content.innerHTML = marked.parse(data.content);
-                    
-                    // Сохраняем в историю
-                    saveToHistory(data.content);
-                    
-                    // Очистка полей
-                    document.getElementById('youtubeUrl').value = '';
-                    document.getElementById('fileInput').value = '';
-                    document.getElementById('fileName').innerText = 'Выбрать файл...';
-                } else {
-                    throw new Error(data.message);
-                }
-            } catch (e) {
-                alert(e.message);
-            } finally {
-                btn.disabled = false;
-                document.getElementById('btnText').textContent = 'Запустить';
-                loader.style.display = 'none';
+                const d = await r.json();
+                if(d.task_id) startPolling(d.task_id);
+            } catch(e) {
+                txt.innerText = "❌ Ошибка соединения. Попробуйте обновить страницу.";
             }
-        });
+        }
 
-        // Запуск рендера при открытии
-        window.onload = renderHistory;
+        function startPolling(id) {
+            if(poll) clearInterval(poll);
+            poll = setInterval(async () => {
+                try {
+                    const r = await fetch(`/check-status?task_id=${id}`);
+                    const d = await r.json();
+                    if (typeof d.data === 'object' && d.data.result) {
+                        clearInterval(poll);
+                        document.getElementById('result').innerHTML = marked.parse(d.data.result);
+                        document.getElementById('result').classList.remove('hidden');
+                        document.getElementById('status-box').classList.add('hidden');
+                    } else {
+                        document.getElementById('status-text').innerText = d.data;
+                    }
+                } catch(e) { console.log("Опрос..."); }
+            }, 3000);
+        }
     </script>
 </body>
 </html>

@@ -1,74 +1,30 @@
-import os
-import google.generativeai as genai
+import os, groq, google.genai as genai
 from dotenv import load_dotenv
+from services.audio_service import split_audio
 
 load_dotenv()
+g_client = groq.Groq(api_key=os.getenv("GROQ_API_KEY"))
+gem_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-api_key = os.getenv("GOOGLE_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
+def analyze_text(audio_path):
+    chunks = split_audio(audio_path)
+    full_text = ""
+    for c in chunks:
+        with open(c, "rb") as f:
+            t = g_client.audio.transcriptions.create(file=(c, f.read()), model="whisper-large-v3", response_format="text")
+            full_text += t + " "
+        if "_part_" in c: os.remove(c)
 
-def analyze_content(text: str):
-    print("🧠 [AI] Анализирую текст...")
-
-    if not api_key:
-        return "❌ Ошибка: Нет GOOGLE_API_KEY."
-
-    # Твой актуальный список моделей (от самых новых к старым)
-    priority_models = [
-        'gemini-2.5-flash',       # Самая свежая и быстрая
-        'gemini-2.0-flash',       # Стабильная 2.0
-        'gemini-flash-latest',    # Всегда последняя версия
-        'gemini-1.5-flash',       # На всякий случай
-    ]
-    
-    selected_model = None
-
-    # 1. Получаем список моделей, доступных ТЕБЕ
-    try:
-        my_models = [m.name.replace('models/', '') for m in genai.list_models()]
-        
-        # 2. Ищем первое совпадение
-        for target in priority_models:
-            if target in my_models:
-                selected_model = target
-                break
-        
-        # Если ничего не совпало, берем первую попавшуюся "gemini"
-        if not selected_model:
-            selected_model = "gemini-2.0-flash" # Форсируем 2.0, она у тебя точно есть
-
-    except Exception as e:
-        print(f"⚠️ Ошибка выбора модели: {e}. Пробую дефолтную.")
-        selected_model = "gemini-2.0-flash"
-
-    print(f"🤖 Использую мощь модели: {selected_model}")
-
-    system_prompt = """
-    Ты — профессиональный контент-мейкер и редактор VibeStream. 
-    Твоя задача — сделать из расшифровки видео вирусный пост для блога.
-    
-    Структура ответа (используй Markdown):
-    
-    # 📝 [Заголовок кликбейтный, но честный]
-    
-    ## ⚡️ TL;DR (Суть в одном предложении)
-    
-    ## 🔥 Главные инсайты
-    * (3-5 ключевых мыслей из видео)
-    
-    ## 🚀 Пост для Telegram
-    (Готовый текст поста, с эмодзи, разделенный на абзацы. Тон: дружеский, экспертный)
-    
-    ## 🏷 Хештеги
-    #(тег1) #(тег2) #(тег3)
-    """
+    # Сохраняем полный текст для PRO пользователей
+    t_path = os.path.join(os.path.dirname(audio_path), "transcript.txt")
+    with open(t_path, "w", encoding="utf-8") as f: f.write(full_text)
 
     try:
-        model = genai.GenerativeModel(selected_model)
-        # Ограничиваем текст, чтобы не перегрузить токенами, если видео огромное
-        response = model.generate_content(system_prompt + "\n\nТекст видео:\n" + text[:40000])
-        return response.text
+        # План А: Gemini (Лимит 1 млн токенов)
+        res = gem_client.models.generate_content(model='gemini-1.5-flash', contents=f"Сделай SMM-отчет: {full_text}")
+        return res.text, t_path
     except Exception as e:
-        print(f"❌ Ошибка Gemini: {e}")
-        return f"Ошибка анализа: {e}"
+        print(f"⚠️ План Б (Groq): {e}")
+        comp = g_client.chat.completions.create(model="llama-3.1-8b-instant", 
+                                               messages=[{"role": "user", "content": f"Саммари: {full_text[:12000]}"}])
+        return comp.choices[0].message.content, t_path
